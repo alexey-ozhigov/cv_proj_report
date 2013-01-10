@@ -9,6 +9,7 @@
 \usepackage{graphicx}
 \usepackage{caption}
 \usepackage{subcaption}
+\usepackage{amsmath}
 
 
 \begin{document}
@@ -57,7 +58,20 @@
 %\item[1)] Programming language(-s) for implementation: C++ and/or Python.
 %\end{itemize}
 \section{Approach}
-...
+This section contains description of the hand tracking algorithm.\\
+The algorithm consists of the following steps, each of which is applied to every RGB image and corresponding range image of the input video:
+\begin{enumerate}
+\item Initialization1. RGB image is converted to gray scale and the palm of the hand is detected by Haar cascade classifier \cite{Viola01} (result: center of the palm, ${P_c}$)
+\item Initialization2. RGB image is converted to HSV colour space and Hue histogram at the area around $P_c$ is calculated (result: Hue histogram of the hand skin, $H_c$)
+\item Tracking1. RGB image is converted to gray scale and the palm of the hand is detected by Haar cascade classifier (result: current center of the palm, ${P_{c_t}}$)
+\item Tracking2. Range image is thresholded using
+    \[
+        Range_{min} = {P_{c_t}}-50[mm],  \\
+        Range_{max} = {P_{c_t}}+50[mm]
+    \]
+\item Tracking3. CAMSHIFT tracking algorithm is applied to the Hue channel of HSV image with Hue histogram $H_c$ and initial window position returned by Initialization1 step (result: 
+\item Tracking4. Since neither the cascade classifier, nor CAMSHIFT
+\end{enumerate}
 %Haar cascade classifier will be used to distinguish between gestures (1) and (2) (see \cite{Chen}).\\
 %Color blob detection and/or 3D depth shareholding will be used to detect hand silhouette. Finger tips on the silhouette will be detected using k-curvature (see \cite{Segen}) algorithm. Rotation of the hand will be detected by measuring angle between line(-s) connecting finger tip(-s) with the center of the hand and vertical line on a 2D image. Bending of the hand will be detected by the hight of the hand bounding box and/or depth values of finger tips.
 %\begin{figure}
@@ -98,6 +112,62 @@
 %                \end{subfigure}
 %        \caption{Sample hand images: a) fist to stop motion, b) initial position (bottom), c) rotating left (upper left),  d) rotating hand right (upper right), e) bending hand down for acceleration (taken from \url{http://www.istockphoto.com})}\label{fig:gesture_images}
 %\end{figure}
+\section{Alternative approach}
+This section describes alternative approach to hand tracking. It does not require cascade classifier and relies on hand contour k-curvature \cite{Segen} analysis to detect the hand. The algorithm steps are the following.
+\begin{enumerate}
+\item Range thresholding. Assuming the hand is the closest to the camera object, threshold the range image using
+    \[
+        Range_{min} = 0,  \\
+        Range_{max} = {P_{c_t}}+15[cm]
+    \] (result: the hand silhouette, $S$)
+\item Get the bounding box of $S$ (result: bounding box around the hand, $B$ and its center $B_c$ and height $B_h$). Given the initial height $B_{h_0}$ it is possible to calculate current tilt position $B_{h_t}$ in percents as 
+\[
+B_{h_t} = B_h / B_0 \cdot 100\%
+\]. Driving speed of the robot is proportional to $100-B_{h_t}$ (see Figure \ref{fig:fore}).
+
+\item Get the contour of $S$ (result: contour ${C} = \{C_1, C_2, ..., C_n\}$, a set of points which correspond to the boundary pixels of the silhouette)
+\item k-curvature analysis
+    \begin{enumerate}
+        \item Break $S$ into segments of length $S_{delta}$ ($S_{delta} = 50 [pixels]$ for average sized hand, 1 metre from the camera) (result: ${S_p} = \{S_{p_1}, S_{p_2}, ..., S_{p_M}\}$, a set of segment points, where $S_{p_i} \in C$)
+        \item For every $S_{p_i} \in \{S_{p_1}, S_{p_2}, ..., S_{p_M}, S_{p_1}\}, i = 2..M$ calculate angle $A_{i-1}$ which is built by points $S_{p_{i-2}}$, $S_{p_{i-1}}$ and $S_{p_i}$ (result: $A$, a set of segment angles along $S$)
+        \item Find finger tips and valleys. Point $S_i$ is considered a tip or a valley if corresponding segment angle $A_i < 1.3 [rad]$ for middle-sized hand, 1 metre from the camera (result: an unordered set of points corresponding to finger tips and valleys, $Q$)
+        \item $Q_i$ is considered a tip if 
+\[
+dist(T_i, B_c) > B_h / 3,
+\]
+where $dist$ is Euclidean distance (result: a set of points corresponding to finger tips, $T$)
+    \end{enumerate}
+\item Hand recognition. $S$ is considered a hand if 
+\[
+5 <= \left|T\right| <= 15
+\] i.e. if at least 5 fingers could be detected, but not more than 15. There could be more than 5 fingers detected if the data from which $S$ is obtained is noisy. \\
+Test statistics of tips number for sample of size 100 shows $\mu = 7.53$ and $\delta = 1.51$ when images depicted an open hand. For a fist the corresponding values are $\mu = 3.26$ and $\delta = 1.53$.
+\item Finding the line segment connecting point and thumb fingers, $L$. If the hand is recognized, a convex hull is calculated from $S$ along with convexity defects. Convexity defect is characterized by depth (how far it is from the contour) and length (see Figure \ref{fig:cont}). Selection criteria for $L$ among other segments of the convex hull is the following: 
+\[
+    length(L) > 0.6 \cdot B_h \land depth(D_l) > 0.4 \cdot length(L),
+\]
+where $D_l$ is convexity defect corresponding to $L$. (Result: thumb/point fingers line $L$)
+\item Calculate turning angle. Measure angle between $L$ and horizontal line (result: turning angle $\beta$). Given the initial turning angle $\beta_0$, it is possible to get current orientation 
+\[
+\beta_t = \beta_0 - \beta
+\]
+
+\end{enumerate}
+
+\begin{figure}
+        \centering
+        \includegraphics[width=\textwidth]{cont}
+        \caption{Hand contour and convex hull segment between thumb and point fingers}
+        \label{fig:cont}
+\end{figure}
+\begin{figure}
+        \centering
+        \includegraphics[width=\textwidth]{fore}
+        \caption{Hand silhouette with bounding boxes: initial (larger) and current (smaller)}
+        \label{fig:fore}
+\end{figure}
+
+
 \section{Evaluation}
 ...
 %The following test scenario will be used to test the performance of the library.
